@@ -1,0 +1,52 @@
+name: Video and File Downloader
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_url:
+        description: 'لینک فایل یا ویدیو را اینجا قرار دهید'
+        required: true
+        type: string
+      split_size:
+        description: 'حجم هر پارت (مثلا 500m برای 500 مگابایت)'
+        required: false
+        default: '500m'
+        type: string
+
+jobs:
+  download-job:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: بررسی و دریافت پروژه
+        uses: actions/checkout@v4
+
+      - name: نصب ابزارهای دانلود و فشرده‌سازی
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aria2 p7zip-full
+          sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: دانلود محتوا با حداکثر سرعت
+        run: |
+          mkdir -p downloads
+          cd downloads
+          URL="${{ github.event.inputs.file_url }}"
+          yt-dlp --no-check-certificates "$URL" || aria2c -x 16 -s 16 "$URL"
+
+      - name: پارت‌بندی و فشرده‌سازی فایل
+        run: |
+          mkdir -p output_parts
+          7z a -v${{ github.event.inputs.split_size }} output_parts/downloaded_part.7z ./downloads/*
+
+      - name: انتشار فایل‌ها در بخش Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: download-${{ github.run_id }}
+          name: "دانلود شماره ${{ github.run_id }}"
+          files: output_parts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
